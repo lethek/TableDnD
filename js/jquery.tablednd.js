@@ -81,9 +81,9 @@
 (function ($) {
 // Determine if this is a touch device
 var hasTouch = 'ontouchstart' in document.documentElement,
-        startEvent = hasTouch ? 'touchstart' : 'mousedown',
-        moveEvent = hasTouch ? 'touchmove' : 'mousemove',
-        endEvent = hasTouch ? 'touchend' : 'mouseup';
+        startEvent = hasTouch ? 'touchstart.tablednd' : 'mousedown.tablednd',
+        moveEvent = hasTouch ? 'touchmove.tablednd' : 'mousemove.tablednd',
+        endEvent = hasTouch ? 'touchend.tablednd' : 'mouseup.tablednd';
 
 // If we're on a touch device, then wire up the events
 // see http://stackoverflow.com/a/8456194/1316086
@@ -133,33 +133,25 @@ jQuery.tableDnD = {
 
     /** This function makes all the rows on the table draggable apart from those marked as "NoDrag" */
     makeDraggable: function(table) {
-
         var config = table.tableDnDConfig;
         if (config.dragHandle) {
-            // We only need to add the event to the specified cells
-            var cells = jQuery(table.tableDnDConfig.dragHandle, table);
-            cells.each(function() {
-                // The cell is bound to "this"
-                jQuery(this).bind(startEvent, function(ev) {
-                    jQuery.tableDnD.initialiseDrag(jQuery(this).parents('tr')[0], table, this, ev, config);
-                    return false;
-                });
-            })
+        	// We only need to add the event to the specified cells
+        	jQuery(table).on(startEvent, table.tableDnDConfig.dragHandle, function (ev) {
+        		ev.preventDefault();
+	        	// The cell is bound to "this"
+	        	jQuery.tableDnD.initialiseDrag(jQuery(this).parents('tr')[0], table, this, ev, config);
+	        	return false;
+	        });
         } else {
             // For backwards compatibility, we add the event to the whole row
-            var rows = jQuery("tr", table); // get all the rows as a wrapped set
-            rows.each(function() {
-                // Iterate through each row, the row is bound to "this"
-                var row = jQuery(this);
-                if (! row.hasClass("nodrag")) {
-                    row.bind(startEvent, function(ev) {
-                        if (ev.target.tagName == "TD") {
-                            jQuery.tableDnD.initialiseDrag(this, table, this, ev, config);
-                            return false;
-                        }
-                    }).css("cursor", "move"); // Store the tableDnD object
+        	jQuery(table).on(startEvent, "tr:not(.nodrag)", function (ev) {
+        		// The row is bound to "this"
+                if (ev.target.tagName == "TD") {
+                	ev.preventDefault();
+                	jQuery.tableDnD.initialiseDrag(this, table, this, ev, config);
+                    return false;
                 }
-            });
+            }).css("cursor", "move"); // Store the tableDnD object
         }
     },
 
@@ -167,25 +159,25 @@ jQuery.tableDnD = {
         jQuery.tableDnD.dragObject = dragObject;
         jQuery.tableDnD.currentTable = table;
         jQuery.tableDnD.mouseOffset = jQuery.tableDnD.getMouseOffset(target, evnt);
-        jQuery.tableDnD.originalOrder = jQuery.tableDnD.serialize();
+	    jQuery.tableDnD.originalIndex = dragObject.rowIndex;
         // Now we need to capture the mouse up and mouse move event
         // We can use bind so that we don't interfere with other event handlers
-        jQuery(document)
-                .bind(moveEvent, jQuery.tableDnD.mousemove)
-                .bind(endEvent, jQuery.tableDnD.mouseup);
+        jQuery(table)
+                .on(moveEvent, jQuery.tableDnD.mousemove)
+                .on(endEvent, jQuery.tableDnD.mouseup);
         if (config.onDragStart) {
             // Call the onDragStart method if there is one
             config.onDragStart(table, target);
         }
     },
 
-    updateTables: function() {
-        this.each(function() {
-            // this is now bound to each matching table
-            if (this.tableDnDConfig) {
-                jQuery.tableDnD.makeDraggable(this);
-            }
-        })
+    updateTables: function () {
+	    this.each(function() {
+	    	// this is now bound to each matching table
+		    if (this.tableDnDConfig) {
+		    	jQuery.tableDnD.makeDraggable(this);
+		    }
+	    });
     },
 
     /** Get the mouse coordinates from the event (allowing for browser differences) */
@@ -236,7 +228,7 @@ jQuery.tableDnD = {
         return {x:left, y:top};
     },
 
-    mousemove: function(ev) {
+    mousemove: function (ev) {
         if (jQuery.tableDnD.dragObject == null) {
             return;
         }
@@ -338,11 +330,11 @@ jQuery.tableDnD = {
     },
 
     mouseup: function(e) {
-        if (jQuery.tableDnD.currentTable && jQuery.tableDnD.dragObject) {
+	    if (jQuery.tableDnD.currentTable && jQuery.tableDnD.dragObject) {
             // Unbind the event handlers
-            jQuery(document)
-                    .unbind(moveEvent, jQuery.tableDnD.mousemove)
-                    .unbind(endEvent, jQuery.tableDnD.mouseup);
+	    	jQuery(jQuery.tableDnD.currentTable)
+                    .off(moveEvent, jQuery.tableDnD.mousemove)
+                    .off(endEvent, jQuery.tableDnD.mouseup);
             var droppedRow = jQuery.tableDnD.dragObject;
             var config = jQuery.tableDnD.currentTable.tableDnDConfig;
             // If we have a dragObject, then we need to release it,
@@ -353,9 +345,8 @@ jQuery.tableDnD = {
                 jQuery(droppedRow).css(config.onDropStyle);
             }
             jQuery.tableDnD.dragObject = null;
-            var newOrder = jQuery.tableDnD.serialize();
-            if (config.onDrop && (jQuery.tableDnD.originalOrder != newOrder)) {
-                // Call the onDrop method if there is one
+            if (config.onDrop && (jQuery.tableDnD.originalIndex !== droppedRow.rowIndex)) {
+            	// Call the onDrop method if there is one
                 config.onDrop(jQuery.tableDnD.currentTable, droppedRow);
             }
             jQuery.tableDnD.currentTable = null; // let go of the table too
@@ -401,7 +392,7 @@ jQuery.tableDnD = {
         var result = "";
         var paramName = table.tableDnDConfig.serializeParamName || table.id;
         var rows = table.rows;
-        for (var i=0; i<rows.length; i++) {
+        for (var i = 0; i < rows.length; i++) {
             if (result.length > 0) result += "&";
             var rowId = rows[i].id;
             if (rowId && table.tableDnDConfig && table.tableDnDConfig.serializeRegexp) {
